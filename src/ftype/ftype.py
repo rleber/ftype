@@ -16,6 +16,8 @@ from pathlib import Path
 class FileType:
     def __init__(self, path: Path):
         self.path = path
+        self.unknown = None
+        self.unclassifiable = None
 
     FILE_TYPES: typing.ClassVar = {
         ".bash": "Shell Script",
@@ -124,6 +126,10 @@ class FileType:
         return sorted(set(cls.FILE_CHARACTERISTICS.keys()))
 
     @classmethod
+    def file_characteristics(cls) -> dict[str, dict[str, bool]]:
+        return cls.FILE_CHARACTERISTICS.copy()
+
+    @classmethod
     def check_type_characteristic(cls, type: str, characteristic: str) -> bool:
         type_definition = cls.FILE_CHARACTERISTICS.get(type, None)
         if type_definition is None:
@@ -166,6 +172,8 @@ class FileType:
 
     def type(self) -> str:
         ext = self.path.suffix.lower()
+        self.unknown = False
+        self.unclassifiable = False
 
         if self.path.is_dir():
             return "Directory"
@@ -184,14 +192,15 @@ class FileType:
         if self.is_binary():
             return "Binary"
 
-        # 1. Check by extension
+        # Check by extension
         if ext in self.FILE_TYPES:
             return self.FILE_TYPES[ext]
 
         if ext != "":
+            self.unknown = True
             return "Unknown"
 
-        # 2. Inspect Shebang or content for edge cases (e.g., files without extensions)
+        # Inspect Shebang or content for edge cases (e.g., files without extensions)
         try:
             with self.path.open("r", encoding="utf-8") as f:
                 first_line = f.readline().strip()
@@ -203,13 +212,14 @@ class FileType:
                     if "sh" in first_line:
                         return "Shell Script"
 
-                # 3. Search for specific file_type keywords
+                # Search for specific file_type keywords
                 content = f.read(2000)  # Read first 2000 chars
                 if "def " in content and "import " in content:
                     return "Python"
                 if "def " in content and "end" in content:
                     return "Ruby"
         except Exception:  # noqa
+            self.unclassifiable = True
             return "Unknown"
 
     def is_binary(self):
