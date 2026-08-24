@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]               
+
+[project]
+name = "ftype"
+description = "Analyze the type of a file"
+authors = [
+    {name="Richard LeBer", email = "richard.leber@gmail.com"}
+]
+license = "MIT"
+license-files = ["LICENSE.md"]
+readme = "README.md"
+requires-python = ">=3.12"
+dynamic = ["version", "dependencies"]
+
+[project.scripts] 
+ftype = "ftype:main" # TODO modify as needed
+
+# [project.urls] # TODO Complete or remove
+# Homepage = "url"
+# Documentation = "url"
+# Repository = "url"
+# Etc. See https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#urls
+
+[tool.setuptools.dynamic]
+version = {attr = "ftype.__version__"}
+dependencies = {file = ["requirements.txt"]}
