@@ -71,6 +71,10 @@ class FileType:
             "code": False,
             "executable": False,
         },
+        "Non-existent": {
+            "code": False,
+            "executable": False,
+        },
         "Other": {
             "code": False,
             "executable": False,
@@ -174,6 +178,9 @@ class FileType:
         ext = self.path.suffix.lower()
         self.unknown = False
         self.unclassifiable = False
+
+        if not self.path.exists():
+            return "Non-existent"
 
         if self.path.is_dir():
             return "Directory"
@@ -288,8 +295,10 @@ def main():
         action="store_true",
         help="Display details",
     )
-    parser.add_argument("file", help="File to check")
+    parser.add_argument("file", nargs="?", help="File to check")
     args = parser.parse_args()
+    if not args.all and not args.file:
+        parser.error("You must specify either --all or provide a file name")
     if args.all:
         for type in FileType.all_types():
             print(type)
