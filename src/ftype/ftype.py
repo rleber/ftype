@@ -4,10 +4,12 @@ Analyze what programming lanugages a project uses
 """
 
 # TODO Refactor using major packages, e.g. mimetypes, filetype, or python-magic
+# TODO Remove Java
 # TODO Add other file types, e.g. Excel, Word, database
 
 import argparse
 import os
+import re
 import sys
 import typing
 from pathlib import Path
@@ -20,34 +22,39 @@ class FileType:
         self.unclassifiable = None
 
     FILE_TYPES: typing.ClassVar = {
-        ".bash": "Shell Script",
-        ".c": "C/C++",
-        ".cc": "C/C++",
+        ".bash": "Shell",
+        ".c": "C",
+        ".cc": "C++",
         ".code-workspace": "VSCode Workspace",
-        ".cpp": "C/C++",
+        ".cpp": "C++",
         ".erb": "Template",
         ".h": "C/C++",
         ".hpp": "C/C++",
         ".info": "Info",
         ".java": "Java",
-        ".js": "JavaScript/TypeScript",
+        ".js": "JavaScript",
         ".md": "Markdown",
         ".plist": "Property List",
         ".py": "Python",
         ".rb": "Ruby",
         ".rs": "Rust",
-        ".sh": "Shell Script",
+        ".sh": "Shell",
         ".template": "Template",
         ".toml": "TOML",
-        ".ts": "JavaScript/TypeScript",
+        ".ts": "TypeScript",
+        ".tsx": "TypeScript",
         ".txt": "Text",
         ".yaml": "YAML",
         ".yml": "YAML",
-        ".zsh": "Shell Script",
+        ".zsh": "Shell",
     }
 
     FILE_CHARACTERISTICS: typing.ClassVar = {
-        "C/C++": {
+        "C": {
+            "code": True,
+            "executable": False,
+        },
+        "C++": {
             "code": True,
             "executable": False,
         },
@@ -63,7 +70,7 @@ class FileType:
             "code": True,
             "executable": False,
         },
-        "JavaScript/TypeScript": {
+        "JavaScript": {
             "code": True,
             "executable": True,
         },
@@ -95,7 +102,7 @@ class FileType:
             "code": True,
             "executable": True,
         },
-        "Shell Script": {
+        "Shell": {
             "code": True,
             "executable": True,
         },
@@ -113,6 +120,10 @@ class FileType:
         },
         "TOML": {
             "code": False,
+            "executable": False,
+        },
+        "TypeScript": {
+            "code": True,
             "executable": False,
         },
         "VSCode Workspace": {
@@ -207,27 +218,14 @@ class FileType:
             self.unknown = True
             return "Unknown"
 
-        # Inspect Shebang or content for edge cases (e.g., files without extensions)
-        try:
-            with self.path.open("r", encoding="utf-8") as f:
-                first_line = f.readline().strip()
-                if first_line.startswith("#!"):
-                    if "python" in first_line:
-                        return "Python"
-                    if "ruby" in first_line:
-                        return "Ruby"
-                    if "sh" in first_line:
-                        return "Shell Script"
+        if typ := self.type_from_shebang():
+            return typ
 
-                # Search for specific file_type keywords
-                content = f.read(2000)  # Read first 2000 chars
-                if "def " in content and "import " in content:
-                    return "Python"
-                if "def " in content and "end" in content:
-                    return "Ruby"
-        except Exception:  # noqa
-            self.unclassifiable = True
-            return "Unknown"
+        if typ := self.type_from_code():
+            return typ
+
+        self.unclassifiable = True
+        return "Unknown"
 
     def is_binary(self):
         """Check if a file is binary by looking for a null byte."""
@@ -279,6 +277,168 @@ class FileType:
 
     def is_permitted_executable(self):
         return self.is_executable() and os.access(str(self.path), os.X_OK)
+
+    def type_from_file_contents(self) -> str | None:
+        # Inspect Shebang or content to determine type (as far as possible)
+        if ftype := self.type_from_shebang():
+            return ftype
+        return self.type_from_code()
+
+    LANGUAGE_PATTERNS: dict[str, dict[str, float]] = {
+        "c": {
+            r"#include\s+<[a-z_]+\.h>": 3.0,
+            r"\bprintf\s*\(": 2.5,
+            r"\bscanf\s*\(": 2.5,
+            r"\bmalloc\s*\(": 2.5,
+            r"\bfree\s*\(": 1.5,
+            r"\bstruct\s+[a-zA-Z_]\w*\s*\{": 1.5,
+            r"\bint\s+main\s*\(": 1.5,
+            r"[{};]\s*$": 0.5,
+        },
+        "c++": {
+            r"#include\s+<(iostream|vector|string|map|memory|algorithm|utility)>": 4.0,
+            r"\bstd::": 3.5,
+            r"\bcout\s*<<": 3.5,
+            r"\bcin\s*>>": 3.5,
+            r"\bnamespace\s+[a-zA-Z_]\w*": 3.0,
+            r"\bclass\s+[a-zA-Z_]\w*": 2.5,
+            r"\btemplate\s*<": 3.0,
+            r"\bauto\s+[a-zA-Z_]\w*\s*=": 2.0,
+            r"\bnew\s+[a-zA-Z_]\w*": 1.5,
+        },
+        "python": {
+            r"^\s*def\s+[a-zA-Z_]\w*\s*\(": 3.0,
+            r"^\s*elif\s+": 2.5,
+            r"^\s*import\s+[\w\.]+(\s+as\s+[\w]+)?": 2.0,
+            r"^\s*from\s+[\w\.]+\s+import": 2.0,
+            r"\bNone\b": 1.5,
+            r"\bTrue\b|\bFalse\b": 1.0,
+            r"\"\"\"|\'\'\'": 2.0,
+            r":\s*$": 0.5,
+        },
+        "javascript": {
+            r"\bconst\s+|\blet\s+|\bvar\s+": 2.0,
+            r"\bfunction\s*\(": 2.0,
+            r"=>": 2.0,
+            r"\bconsole\.log\(": 2.5,
+            r"===|!== ": 2.0,
+            r"\bexport\s+default\b|\bmodule\.exports\b": 2.5,
+            r"^\s*import\s+.*\s+from\s+['\"]": 2.0,
+            r"[{};]\s*$": 0.5,
+        },
+        "typescript": {
+            r"\binterface\s+[A-Z]\w*\s*\{": 4.0,
+            r"\btype\s+[A-Z]\w*\s*=": 4.0,
+            r":\s*(string|number|boolean|any|void|unknown|never)\b": 3.5,
+            r"<[A-Z]\w*(\s*extends\s+.*)?>": 3.0,
+            r"\bas\s+[A-Z]\w*\b": 3.0,
+            r"\breadonly\s+": 2.5,
+            r"\benum\s+[A-Z]\w*\s*\{": 3.5,
+            r"\bimport\s+type\s+": 4.0,
+        },
+        "ruby": {
+            r"^\s*def\s+[a-zA-Z_]\w*[!?]?": 2.5,
+            r"^\s*end\s*$": 3.0,
+            r"^\s*elsif\s+": 2.5,
+            r"\bputs\b|\bp\b": 1.5,
+            r"\battr_accessor\b|\battr_reader\b": 3.0,
+            r"\bnil\b": 2.0,
+            r"^\s*require\s+['\"]": 2.0,
+            r"#\{.*\}": 2.5,
+        },
+        "rust": {
+            r"\bfn\s+[a-zA-Z_]\w*\s*\(": 3.0,
+            r"\blet\s+mut\s+": 3.0,
+            r"\bpub\s+fn\b": 3.0,
+            r"\bimpl\b|\btrait\b": 2.5,
+            r"\bprintln!\(|\beprintln!\(": 3.0,
+            r"\bmatch\s+.*\{": 2.0,
+            r"->\s*[\w:<>]+\s*\{": 2.0,
+            r"\bOk\([^)]*\)|\bErr\([^)]*\)": 2.0,
+            r"\bSome\([^)]*\)|\bNone\b": 1.0,
+        },
+        "shell": {
+            r"^#!\s*/bin/(bash|sh|zsh)": 4.0,
+            r"^#!\s*/usr/bin/env\s+(bash|sh|zsh)": 4.0,
+            r"^\s*if\s+\[\[?.*\]\]?;\s*then": 3.0,
+            r"^\s*fi\s*$": 3.0,
+            r"^\s*elif\s+\[\[?.*\]\]?;\s*then": 2.5,
+            r"\bexport\s+[a-zA-Z_]\w*=": 2.5,
+            r"\blocal\s+[a-zA-Z_]\w*=": 2.5,
+            r"\$\{?[a-zA-Z_]\w*\}?": 1.5,
+            r"^\s*echo\s+": 1.5,
+            r">\s*/dev/null\s+2>&1": 2.0,
+        },
+    }
+
+    SNIPPET_LENGTH = 2000
+    MINIMUM_THRESHOLD = 1.5
+
+    def type_from_code(self) -> str | None:
+        try:
+            with self.path.open("r", encoding="utf-8") as f:
+                code_snippet = f.read(SNIPPET_LENGTH)
+
+        except Exception:  # noqa
+            return None
+
+        if not code_snippet or not code_snippet.strip():
+            return None
+
+        scores: dict[str, float] = {lang: 0.0 for lang in self.LANGUAGE_PATTERNS}
+        lines = code_snippet.splitlines()
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            for lang, patterns in LANGUAGE_PATTERNS.items():
+                for pattern, weight in patterns.items():
+                    if re.search(pattern, stripped):
+                        scores[lang] += weight
+
+        best_language, highest_score = max(scores.items(), key=lambda item: item[1])
+
+        # Minimum threshold to avoid false positives on ambiguous single lines
+        if highest_score < self.MINIMUM_THRESHOLD:
+            return None
+
+        # Resolve TypeScript vs JavaScript: TS signatures supersede JS base syntax
+        if scores["typescript"] > 0 and (
+            best_language == "javascript"
+            or scores["typescript"] >= scores["javascript"]
+        ):
+            return "typescript"
+
+        # Resolve ambiguity between C and C++: default to 'c' if scores are tied or C++ signature absent
+        if best_language in ("c", "c++"):
+            if scores["c++"] > scores["c"]:
+                return "c++"
+            return "c"
+
+        return best_language
+
+    def type_from_shebang(self) -> str | None:
+        """Inspect shebang to determine file type (if possible)"""
+        try:
+            with self.path.open("r", encoding="utf-8") as f:
+                first_line = f.readline().strip()
+        except Exception:  # noqa
+            return None
+
+        if first_line.startswith("#!"):
+            if re.search(r"\bpython\b", first_line):
+                return "Python"
+            if re.search(r"\bruby\b", first_line):
+                return "Ruby"
+            if re.search(r"\b(bash|zsh)\b", first_line):
+                return "Shell"
+            if re.search(r"\b(node|js)\b", first_line):
+                return "JavaScript"
+            if re.search(r"\brust\b", first_line):
+                return "Rust"
+        return None
 
 
 def main():
