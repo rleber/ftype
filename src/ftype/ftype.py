@@ -284,7 +284,7 @@ class FileType:
             return ftype
         return self.type_from_code()
 
-    LANGUAGE_PATTERNS: dict[str, dict[str, float]] = {
+    LANGUAGE_PATTERNS: dict[str, dict[str, float]] = {  # noqa
         "c": {
             r"#include\s+<[a-z_]+\.h>": 3.0,
             r"\bprintf\s*\(": 2.5,
@@ -377,7 +377,7 @@ class FileType:
     def type_from_code(self) -> str | None:
         try:
             with self.path.open("r", encoding="utf-8") as f:
-                code_snippet = f.read(SNIPPET_LENGTH)
+                code_snippet = f.read(self.SNIPPET_LENGTH)
 
         except Exception:  # noqa
             return None
@@ -393,7 +393,7 @@ class FileType:
             if not stripped:
                 continue
 
-            for lang, patterns in LANGUAGE_PATTERNS.items():
+            for lang, patterns in self.LANGUAGE_PATTERNS.items():
                 for pattern, weight in patterns.items():
                     if re.search(pattern, stripped):
                         scores[lang] += weight
