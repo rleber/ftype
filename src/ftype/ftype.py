@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Analyze what programming lanugages a project uses
+Analyze the type of a file, or the file types used throughout a directory tree
 """
 
 # TODO Refactor using major packages, e.g. mimetypes, filetype, or python-magic
@@ -439,6 +439,78 @@ class FileType:
             if re.search(r"\brust\b", first_line):
                 return "Rust"
         return None
+
+
+class DirectoryAnalyzer:
+    """Analyzes the file types and languages used within a directory tree."""
+
+    def __init__(self, directory: str | Path):
+        self._directory = directory
+        self.unknown_file_types: set[str] = set()
+        self.unclassifiable_files: set[str] = set()
+        self._file_types: list | None = None
+
+    @property
+    def directory(self) -> str | Path:
+        return self._directory
+
+    def file_type_counts(self) -> dict:
+        counts = {}
+
+        for root, dirs, files in os.walk(self.directory):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for file in files:
+                file_path = Path(root) / file
+                analyzer = FileType(file_path)
+                file_type = analyzer.type()
+                if file_type in counts:
+                    counts[file_type] += 1
+                else:
+                    counts[file_type] = 1
+                if analyzer.unknown:
+                    self.unknown_file_types.add(file_path.suffix)
+
+                if analyzer.unclassifiable:
+                    self.unclassifiable_files.add(str(file_path))
+
+        return counts
+
+    def file_types(self) -> list:
+        if self._file_types is None:
+            counts = self.file_type_counts()
+            augmented_results = []
+            for file_type, count in counts.items():
+                if file_type in FileType.file_characteristics():
+                    augmented_results.append(
+                        {
+                            "type": file_type,
+                            "count": count,
+                            "code": FileType.file_characteristics()[file_type]["code"],
+                            "executable": FileType.file_characteristics()[file_type][
+                                "executable"
+                            ],
+                        }
+                    )
+                else:
+                    augmented_results.append(
+                        {
+                            "type": file_type,
+                            "count": count,
+                            "code": False,
+                            "executable": False,
+                        }
+                    )
+            self._file_types = augmented_results
+        return self._file_types
+
+    def most_likely_language(self) -> str:
+        results = self.file_types()
+        language_counts = {
+            result["type"]: result["count"] for result in results if result["code"]
+        }
+        if not language_counts:
+            return "Unknown"
+        return max(language_counts, key=language_counts.get)
 
 
 def main():
